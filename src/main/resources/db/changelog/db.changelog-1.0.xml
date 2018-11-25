@@ -5,7 +5,9 @@
             <column autoIncrement="true" name="id" type="BIGINT">
                 <constraints primaryKey="true" primaryKeyName="pk_panel"/>
             </column>
-            <column name="serial" type="VARCHAR(255)"/>
+            <column name="serial" type="VARCHAR(255)">
+                <constraints unique="true"/>
+            </column>
             <column name="latitude" type="DOUBLE"/>
             <column name="longitude" type="DOUBLE"/>
             <column name="brand" type="VARCHAR(255)"/>

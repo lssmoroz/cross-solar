@@ -10,7 +10,7 @@ import org.springframework.data.domain.Pageable;
  *
  */
 public interface HourlyElectricityService {
-  HourlyElectricity save(HourlyElectricity hourlyElectricity);
+  HourlyElectricity save(HourlyElectricity hourlyElectricity, String panelSerial);
   
   Page<HourlyElectricity> getAllHourlyElectricityByPanelId(Long panelId, Pageable pageable);
 }

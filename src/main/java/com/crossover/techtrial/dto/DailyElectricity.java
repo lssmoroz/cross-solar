@@ -15,13 +15,13 @@ public class DailyElectricity implements Serializable {
 
   private LocalDate date;
   
-  private Long sum;
+  private Long sum = 0L;
   
-  private Double average;
+  private Double average = 0D;
   
-  private Long min;
+  private Long min = Long.MAX_VALUE;
   
-  private Long max;
+  private Long max = Long.MIN_VALUE;
 
   public LocalDate getDate() {
     return date;

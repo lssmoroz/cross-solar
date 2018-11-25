@@ -11,6 +11,7 @@ import javax.persistence.Id;
 import javax.persistence.JoinColumn;
 import javax.persistence.ManyToOne;
 import javax.persistence.Table;
+import javax.validation.constraints.NotNull;
 
 
 /**
@@ -32,13 +33,16 @@ public class HourlyElectricity implements Serializable {
   
   @JsonIgnore
   @ManyToOne
+  @NotNull
   @JoinColumn(name = "panel_id", referencedColumnName = "id")
   Panel panel;
   
   @Column(name = "generated_electricity")
+  @NotNull
   Long generatedElectricity;
   
   @Column(name = "reading_at")
+  @NotNull
   LocalDateTime readingAt;
 
   public Long getId() {
