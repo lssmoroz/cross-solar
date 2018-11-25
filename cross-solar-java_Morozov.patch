@@ -1,0 +1,824 @@
+From 058c95c9799ba28ea780ac3543401de1e60fb4fa Mon Sep 17 00:00:00 2001
+From: mav <lssmoroz@gmail.com>
+Date: Sun, 25 Nov 2018 12:48:08 +0300
+Subject: [PATCH] My submission
+XOV: XO_0_0_1
+
+---
+ gradlew                                       |   0
+ .../techtrial/controller/PanelController.java |  33 +-
+ .../techtrial/dto/DailyElectricity.java       |   8 +-
+ .../exceptions/GlobalExceptionHandler.java    |   0
+ .../techtrial/model/HourlyElectricity.java    |   4 +
+ .../HourlyElectricityRepository.java          |   7 +
+ .../service/DailyElectricityService.java      |  12 +
+ .../service/DailyElectricityServiceImpl.java  |  65 ++++
+ .../service/HourlyElectricityService.java     |   2 +-
+ .../service/HourlyElectricityServiceImpl.java |  57 ++-
+ .../db/changelog/db.changelog-1.0.xml         |   4 +-
+ .../db/changelog/db.changelog-master.xml      |   0
+ .../controller/PanelControllerTest.java       | 355 +++++++++++++++++-
+ src/test/resources/applicationTest.properties |  16 +
+ 14 files changed, 527 insertions(+), 36 deletions(-)
+ mode change 100755 => 100644 gradlew
+ mode change 100755 => 100644 src/main/java/com/crossover/techtrial/exceptions/GlobalExceptionHandler.java
+ create mode 100644 src/main/java/com/crossover/techtrial/service/DailyElectricityService.java
+ create mode 100644 src/main/java/com/crossover/techtrial/service/DailyElectricityServiceImpl.java
+ mode change 100755 => 100644 src/main/resources/db/changelog/db.changelog-1.0.xml
+ mode change 100755 => 100644 src/main/resources/db/changelog/db.changelog-master.xml
+ create mode 100644 src/test/resources/applicationTest.properties
+
+diff --git a/gradlew b/gradlew
+old mode 100755
+new mode 100644
+diff --git a/src/main/java/com/crossover/techtrial/controller/PanelController.java b/src/main/java/com/crossover/techtrial/controller/PanelController.java
+index d308f18..135899e 100644
+--- a/src/main/java/com/crossover/techtrial/controller/PanelController.java
++++ b/src/main/java/com/crossover/techtrial/controller/PanelController.java
+@@ -3,10 +3,17 @@ package com.crossover.techtrial.controller;
+ import com.crossover.techtrial.dto.DailyElectricity;
+ import com.crossover.techtrial.model.HourlyElectricity;
+ import com.crossover.techtrial.model.Panel;
++import com.crossover.techtrial.service.DailyElectricityService;
+ import com.crossover.techtrial.service.HourlyElectricityService;
++import com.crossover.techtrial.service.HourlyElectricityServiceImpl;
+ import com.crossover.techtrial.service.PanelService;
++
++import java.time.format.DateTimeFormatter;
+ import java.util.ArrayList;
+ import java.util.List;
++
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.Pageable;
+@@ -32,6 +39,9 @@ public class PanelController {
+   
+   @Autowired
+   HourlyElectricityService hourlyElectricityService;
++
++  @Autowired
++  DailyElectricityService dailyElectricityService;
+   
+   /**
+    * Register a Panel to System and start receiving the electricity statistics.
+@@ -43,28 +53,27 @@ public class PanelController {
+     panelService.register(panel);
+     return  ResponseEntity.accepted().build();
+   }
+-  
++
+   /**
+    * Controller Method to save hourly Electricity to Database. 
+    * @param panelSerial Serial number of Panel.
+    * @param hourlyElectricity  generated electricity for this panel.
+    * @return
+    */
+-  
+   @PostMapping(path = "/api/panels/{panel-serial}/hourly")
+   public ResponseEntity<?> saveHourlyElectricity(
+-      @PathVariable(value = "panel-serial") String panelSerial, 
++      @PathVariable(value = "panel-serial") String panelSerial,
+       @RequestBody HourlyElectricity hourlyElectricity) {
+-    return ResponseEntity.ok(hourlyElectricityService.save(hourlyElectricity));
++    return ResponseEntity.ok(hourlyElectricityService.save(hourlyElectricity, panelSerial));
+   }
+-   
++
+   /**
+    * Get Hourly Electricity from Previous dates.
+    */
+   
+   @GetMapping(path = "/api/panels/{panel-serial}/hourly")
+   public ResponseEntity<?> hourlyElectricity(
+-      @PathVariable(value = "banel-serial") String panelSerial,
++      @PathVariable(value = "panel-serial") String panelSerial,
+       @PageableDefault(size = 5,value = 0) Pageable pageable) {
+     Panel panel = panelService.findBySerial(panelSerial);
+     if (panel == null) {
+@@ -85,11 +94,11 @@ public class PanelController {
+   @GetMapping(path = "/api/panels/{panel-serial}/daily")
+   public ResponseEntity<List<DailyElectricity>> allDailyElectricityFromYesterday(
+       @PathVariable(value = "panel-serial") String panelSerial) {
+-    List<DailyElectricity> dailyElectricityForPanel = new ArrayList<>();
+-    /**
+-     * IMPLEMENT THE LOGIC HERE and FEEL FREE TO MODIFY OR ADD CODE TO RELATED CLASSES.
+-     * MAKE SURE NOT TO CHANGE THE SIGNATURE OF ANY END POINT. NO PAGINATION IS NEEDED HERE.
+-     */
+-    return ResponseEntity.ok(dailyElectricityForPanel);
++    Panel panel = panelService.findBySerial(panelSerial);
++    if (panel == null) {
++      return ResponseEntity.notFound().build();
++    }
++
++    return ResponseEntity.ok(dailyElectricityService.getDailyElectricityForPanel(panel.getId()));
+   }
+ }
+\ No newline at end of file
+diff --git a/src/main/java/com/crossover/techtrial/dto/DailyElectricity.java b/src/main/java/com/crossover/techtrial/dto/DailyElectricity.java
+index b0e0ea9..75070f7 100644
+--- a/src/main/java/com/crossover/techtrial/dto/DailyElectricity.java
++++ b/src/main/java/com/crossover/techtrial/dto/DailyElectricity.java
+@@ -15,13 +15,13 @@ public class DailyElectricity implements Serializable {
+ 
+   private LocalDate date;
+   
+-  private Long sum;
++  private Long sum = 0L;
+   
+-  private Double average;
++  private Double average = 0D;
+   
+-  private Long min;
++  private Long min = Long.MAX_VALUE;
+   
+-  private Long max;
++  private Long max = Long.MIN_VALUE;
+ 
+   public LocalDate getDate() {
+     return date;
+diff --git a/src/main/java/com/crossover/techtrial/exceptions/GlobalExceptionHandler.java b/src/main/java/com/crossover/techtrial/exceptions/GlobalExceptionHandler.java
+old mode 100755
+new mode 100644
+diff --git a/src/main/java/com/crossover/techtrial/model/HourlyElectricity.java b/src/main/java/com/crossover/techtrial/model/HourlyElectricity.java
+index 275f765..743450d 100644
+--- a/src/main/java/com/crossover/techtrial/model/HourlyElectricity.java
++++ b/src/main/java/com/crossover/techtrial/model/HourlyElectricity.java
+@@ -11,6 +11,7 @@ import javax.persistence.Id;
+ import javax.persistence.JoinColumn;
+ import javax.persistence.ManyToOne;
+ import javax.persistence.Table;
++import javax.validation.constraints.NotNull;
+ 
+ 
+ /**
+@@ -32,13 +33,16 @@ public class HourlyElectricity implements Serializable {
+   
+   @JsonIgnore
+   @ManyToOne
++  @NotNull
+   @JoinColumn(name = "panel_id", referencedColumnName = "id")
+   Panel panel;
+   
+   @Column(name = "generated_electricity")
++  @NotNull
+   Long generatedElectricity;
+   
+   @Column(name = "reading_at")
++  @NotNull
+   LocalDateTime readingAt;
+ 
+   public Long getId() {
+diff --git a/src/main/java/com/crossover/techtrial/repository/HourlyElectricityRepository.java b/src/main/java/com/crossover/techtrial/repository/HourlyElectricityRepository.java
+index b883493..6f6816f 100644
+--- a/src/main/java/com/crossover/techtrial/repository/HourlyElectricityRepository.java
++++ b/src/main/java/com/crossover/techtrial/repository/HourlyElectricityRepository.java
+@@ -6,6 +6,9 @@ import org.springframework.data.domain.Pageable;
+ import org.springframework.data.repository.PagingAndSortingRepository;
+ import org.springframework.data.rest.core.annotation.RestResource;
+ 
++import java.time.LocalDateTime;
++import java.util.List;
++
+ /**
+  * HourlyElectricity Repository is for all operations for HourlyElectricity.
+  * @author Crossover
+@@ -14,4 +17,8 @@ import org.springframework.data.rest.core.annotation.RestResource;
+ public interface HourlyElectricityRepository 
+     extends PagingAndSortingRepository<HourlyElectricity,Long> {
+   Page<HourlyElectricity> findAllByPanelIdOrderByReadingAtDesc(Long panelId,Pageable pageable);
++
++  List<HourlyElectricity> findAllByPanelIdAndReadingAtBeforeOrderByReadingAtDesc(Long panelId, LocalDateTime localDate);
++
++  HourlyElectricity findFirstByPanelIdAndReadingAt(Long panelId, LocalDateTime readingAt);
+ }
+diff --git a/src/main/java/com/crossover/techtrial/service/DailyElectricityService.java b/src/main/java/com/crossover/techtrial/service/DailyElectricityService.java
+new file mode 100644
+index 0000000..d2520b8
+--- /dev/null
++++ b/src/main/java/com/crossover/techtrial/service/DailyElectricityService.java
+@@ -0,0 +1,12 @@
++package com.crossover.techtrial.service;
++
++import com.crossover.techtrial.dto.DailyElectricity;
++
++import java.util.List;
++
++/**
++ * Created by Alex on 24.11.2018.
++ */
++public interface DailyElectricityService {
++    List<DailyElectricity> getDailyElectricityForPanel(Long panelId);
++}
+\ No newline at end of file
+diff --git a/src/main/java/com/crossover/techtrial/service/DailyElectricityServiceImpl.java b/src/main/java/com/crossover/techtrial/service/DailyElectricityServiceImpl.java
+new file mode 100644
+index 0000000..fc100e5
+--- /dev/null
++++ b/src/main/java/com/crossover/techtrial/service/DailyElectricityServiceImpl.java
+@@ -0,0 +1,65 @@
++package com.crossover.techtrial.service;
++
++import com.crossover.techtrial.dto.DailyElectricity;
++import com.crossover.techtrial.model.HourlyElectricity;
++import com.crossover.techtrial.repository.HourlyElectricityRepository;
++import com.crossover.techtrial.repository.PanelRepository;
++import org.hibernate.boot.model.source.spi.Sortable;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.stereotype.Service;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeFormatter;
++import java.util.ArrayList;
++import java.util.List;
++
++/**
++ * Created by Alex on 24.11.2018.
++ */
++@Service
++public class DailyElectricityServiceImpl implements DailyElectricityService {
++    @Autowired
++    HourlyElectricityRepository hourlyElectricityRepository;
++
++    public List<DailyElectricity> getDailyElectricityForPanel(Long panelId) {
++        List<DailyElectricity> dailyElectricityForPanel = new ArrayList<>();
++
++        List<HourlyElectricity> hourlyElectricityList =
++                hourlyElectricityRepository.findAllByPanelIdAndReadingAtBeforeOrderByReadingAtDesc(panelId, LocalDate.now().atStartOfDay());
++
++        DailyElectricity dailyElectricity = null;
++        LocalDate dateNow = null;
++        int counter = 0;
++        for (HourlyElectricity hourlyElectricity : hourlyElectricityList) {
++            if (null == dateNow || !dateNow.isEqual(hourlyElectricity.getReadingAt().toLocalDate())) {
++                dateNow = hourlyElectricity.getReadingAt().toLocalDate();
++                if (null != dailyElectricity) {
++                    dailyElectricity.setAverage(((double)dailyElectricity.getSum())/counter);
++                }
++                dailyElectricity = new DailyElectricity();
++                dailyElectricity.setDate(dateNow);
++                dailyElectricityForPanel.add(dailyElectricity);
++                counter = 0;
++            }
++            Long generatedNow = hourlyElectricity.getGeneratedElectricity();
++
++            dailyElectricity.setSum(dailyElectricity.getSum()+generatedNow);
++
++            if (dailyElectricity.getMax() < generatedNow) {
++                dailyElectricity.setMax(generatedNow);
++            }
++
++            if (dailyElectricity.getMin() > generatedNow) {
++                dailyElectricity.setMin(generatedNow);
++            }
++
++            ++counter;
++        }
++        if (null != dailyElectricity) {
++            dailyElectricity.setAverage(((double)dailyElectricity.getSum())/counter);
++        }
++
++        return dailyElectricityForPanel;
++    }
++
++}
+\ No newline at end of file
+diff --git a/src/main/java/com/crossover/techtrial/service/HourlyElectricityService.java b/src/main/java/com/crossover/techtrial/service/HourlyElectricityService.java
+index 70c40b7..23b45cf 100644
+--- a/src/main/java/com/crossover/techtrial/service/HourlyElectricityService.java
++++ b/src/main/java/com/crossover/techtrial/service/HourlyElectricityService.java
+@@ -10,7 +10,7 @@ import org.springframework.data.domain.Pageable;
+  *
+  */
+ public interface HourlyElectricityService {
+-  HourlyElectricity save(HourlyElectricity hourlyElectricity);
++  HourlyElectricity save(HourlyElectricity hourlyElectricity, String panelSerial);
+   
+   Page<HourlyElectricity> getAllHourlyElectricityByPanelId(Long panelId, Pageable pageable);
+ }
+diff --git a/src/main/java/com/crossover/techtrial/service/HourlyElectricityServiceImpl.java b/src/main/java/com/crossover/techtrial/service/HourlyElectricityServiceImpl.java
+index 6634e49..93680a7 100644
+--- a/src/main/java/com/crossover/techtrial/service/HourlyElectricityServiceImpl.java
++++ b/src/main/java/com/crossover/techtrial/service/HourlyElectricityServiceImpl.java
+@@ -1,13 +1,20 @@
+ package com.crossover.techtrial.service;
+ 
+ import com.crossover.techtrial.model.HourlyElectricity;
++import com.crossover.techtrial.model.Panel;
+ import com.crossover.techtrial.repository.HourlyElectricityRepository;
+ 
++import com.crossover.techtrial.repository.PanelRepository;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.Pageable;
+ import org.springframework.stereotype.Service;
+ 
++import java.time.LocalDate;
++import java.time.format.DateTimeFormatter;
++
+ /**
+  * HourlyElectricityServiceImpl will handle electricity generated by a Panel.
+  *
+@@ -17,15 +24,43 @@ import org.springframework.stereotype.Service;
+ 
+ @Service
+ public class HourlyElectricityServiceImpl implements HourlyElectricityService {
+-  @Autowired
+-  HourlyElectricityRepository hourlyElectricityRepository;
+-  
+-  public HourlyElectricity save(HourlyElectricity hourlyElectricity) {
+-    return hourlyElectricityRepository.save(hourlyElectricity);
+-  }
+-  
+-  public Page<HourlyElectricity> getAllHourlyElectricityByPanelId(Long panelId, Pageable pageable) {
+-    return hourlyElectricityRepository.findAllByPanelIdOrderByReadingAtDesc(panelId, pageable);
+-  }
+-  
++    private static final Logger LOG = LoggerFactory.getLogger(HourlyElectricityServiceImpl.class);
++
++    @Autowired
++    HourlyElectricityRepository hourlyElectricityRepository;
++
++    @Autowired
++    PanelRepository panelRepository;
++
++    final static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("mm:ss.SSS");
++
++    public HourlyElectricity save(HourlyElectricity hourlyElectricity, String panelSerial) {
++        //If we get wrong (not hour) time - reject it before analyst approving another behavior
++        if (null == hourlyElectricity.getReadingAt() || !hourlyElectricity.getReadingAt().format(formatter).equals("00:00.000")) {
++            LOG.error("Error date format (mm:ss.SSS): {}", hourlyElectricity.getReadingAt().format(formatter));
++            throw new RuntimeException("Wrong date format!");
++        }
++
++        if (null == hourlyElectricity.getPanel()) {
++            Panel panel = panelRepository.findBySerial(panelSerial);
++            if (null == panel) {
++                LOG.error("Wrong serial number of panel: {}", panelSerial);
++                throw new RuntimeException("Wrong serial number of panel!");
++            }
++            hourlyElectricity.setPanel(panel);
++        }
++
++        //If we have the same time for panel in DB already - reject it before analyst approving another behavior
++        if (null != hourlyElectricityRepository.findFirstByPanelIdAndReadingAt(hourlyElectricity.getPanel().getId(), hourlyElectricity.getReadingAt())) {
++            LOG.error("Already have time {} for panel {}", hourlyElectricity.getReadingAt(),  panelSerial);
++            throw new RuntimeException("Already have time for panel!");
++        }
++
++        return hourlyElectricityRepository.save(hourlyElectricity);
++    }
++
++    public Page<HourlyElectricity> getAllHourlyElectricityByPanelId(Long panelId, Pageable pageable) {
++        return hourlyElectricityRepository.findAllByPanelIdOrderByReadingAtDesc(panelId, pageable);
++    }
++
+ }
+\ No newline at end of file
+diff --git a/src/main/resources/db/changelog/db.changelog-1.0.xml b/src/main/resources/db/changelog/db.changelog-1.0.xml
+old mode 100755
+new mode 100644
+index e143a10..6649b60
+--- a/src/main/resources/db/changelog/db.changelog-1.0.xml
++++ b/src/main/resources/db/changelog/db.changelog-1.0.xml
+@@ -5,7 +5,9 @@
+             <column autoIncrement="true" name="id" type="BIGINT">
+                 <constraints primaryKey="true" primaryKeyName="pk_panel"/>
+             </column>
+-            <column name="serial" type="VARCHAR(255)"/>
++            <column name="serial" type="VARCHAR(255)">
++                <constraints unique="true"/>
++            </column>
+             <column name="latitude" type="DOUBLE"/>
+             <column name="longitude" type="DOUBLE"/>
+             <column name="brand" type="VARCHAR(255)"/>
+diff --git a/src/main/resources/db/changelog/db.changelog-master.xml b/src/main/resources/db/changelog/db.changelog-master.xml
+old mode 100755
+new mode 100644
+diff --git a/src/test/java/com/crossover/techtrial/controller/PanelControllerTest.java b/src/test/java/com/crossover/techtrial/controller/PanelControllerTest.java
+index a1deacf..8eb8809 100644
+--- a/src/test/java/com/crossover/techtrial/controller/PanelControllerTest.java
++++ b/src/test/java/com/crossover/techtrial/controller/PanelControllerTest.java
+@@ -1,6 +1,8 @@
+ package com.crossover.techtrial.controller;
+ 
+-import com.crossover.techtrial.model.Panel;
++import com.crossover.techtrial.repository.HourlyElectricityRepository;
++import com.crossover.techtrial.repository.PanelRepository;
++import org.junit.After;
+ import org.junit.Assert;
+ import org.junit.Before;
+ import org.junit.Test;
+@@ -14,11 +16,18 @@ import org.springframework.http.HttpEntity;
+ import org.springframework.http.HttpHeaders;
+ import org.springframework.http.MediaType;
+ import org.springframework.http.ResponseEntity;
++import org.springframework.test.context.TestPropertySource;
+ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+ import org.springframework.test.web.servlet.MockMvc;
+ 
+ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+ 
++import java.time.LocalDate;
++import java.util.List;
++import java.util.Map;
++
++import static org.junit.Assert.assertEquals;
++
+ 
+ /**
+  * PanelControllerTest class will test all APIs in PanelController.java.
+@@ -28,6 +37,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+ 
+ @RunWith(SpringJUnit4ClassRunner.class)
+ @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
++@TestPropertySource(locations = "classpath:applicationTest.properties")
+ public class PanelControllerTest {
+   
+   MockMvc mockMvc;
+@@ -38,19 +48,350 @@ public class PanelControllerTest {
+   @Autowired
+   private TestRestTemplate template;
+ 
++  @Autowired
++  HourlyElectricityRepository hourlyElectricityRepository;
++
++  @Autowired
++  PanelRepository panelRepository;
++
+   @Before
+   public void setup() throws Exception {
+     mockMvc = MockMvcBuilders.standaloneSetup(panelController).build();
+   }
+ 
++  @After
++  public void destroy() {
++    clearRepositories();
++  }
++
++  @Test
++  public void testUniquePanelShouldBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++  }
++
++  @Test
++  public void testTwoPanelsShouldBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createPanel("232324", 202);
++  }
++
+   @Test
+-  public void testPanelShouldBeRegistered() throws Exception {
++  public void testPanelWithSameSerialShouldNotBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    ResponseEntity<Object> response = createPanel("232323", 400);
++    checkWasException(response);
++  }
++
++  @Test
++  public void testHourlyElectricityWithNormalParamsShouldBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    ResponseEntity<Object> response = createHourlyElectricity("232323","500", "2018-11-23T10:00:00");
++    assertEquals(200, response.getStatusCode().value());
++    assertEquals(500, ((Map<String,String>)response.getBody()).get("generatedElectricity"));
++    assertEquals("2018-11-23T10:00:00", ((Map<String,String>)response.getBody()).get("readingAt"));
++  }
++
++  @Test
++  public void testHourlyElectricityWithOutPanelShouldNotBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    ResponseEntity<Object> response = createHourlyElectricity("111111","500", "2018-11-23T10:00:00");
++    assertEquals(400, response.getStatusCode().value());
++    checkWasException(response);
++  }
++
++  @Test
++  public void testHourlyElectricityWithCorruptedTimeShouldNotBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    ResponseEntity<Object> response = createHourlyElectricity("111111","500", "2018-11-23T10:11:11");
++    assertEquals(400, response.getStatusCode().value());
++    checkWasException(response);
++  }
++
++  @Test
++  public void testHourlyElectricityWithOutTimeShouldNotBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    ResponseEntity<Object> response = createHourlyElectricity("232323","500", null);
++    assertEquals(400, response.getStatusCode().value());
++    checkWasException(response);
++  }
++
++  @Test
++  public void testHourlyElectricityWithOutGeneratedElShouldNotBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    ResponseEntity<Object> response = createHourlyElectricity("232323",null, "2018-11-23T10:00:00");
++    assertEquals(400, response.getStatusCode().value());
++    checkWasException(response);
++  }
++
++  @Test
++  public void testHourlyElectricityWithSameTimeShouldNotBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    ResponseEntity<Object> response = createHourlyElectricity("232323","500", "2018-11-23T10:00:00");
++    assertEquals(200, response.getStatusCode().value());
++    response = createHourlyElectricity("232323","100", "2018-11-23T10:00:00");
++    assertEquals(400, response.getStatusCode().value());
++    checkWasException(response);
++  }
++
++  @Test
++  public void testTwoHourlyElectricityWithNormalParamsShouldBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    ResponseEntity<Object> response = createHourlyElectricity("232323","500", "2018-11-23T10:00:00");
++    assertEquals(200, response.getStatusCode().value());
++    assertEquals(500, ((Map<String,String>)response.getBody()).get("generatedElectricity"));
++    assertEquals("2018-11-23T10:00:00", ((Map<String,String>)response.getBody()).get("readingAt"));
++    response = createHourlyElectricity("232323","500", "2018-11-23T11:00:00");
++    assertEquals(200, response.getStatusCode().value());
++    assertEquals(500, ((Map<String,String>)response.getBody()).get("generatedElectricity"));
++    assertEquals("2018-11-23T11:00:00", ((Map<String,String>)response.getBody()).get("readingAt"));
++  }
++
++  @Test
++  public void testTwoHourlyElectricityWithSameTimeForTwoPanelsShouldBeRegistered() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    ResponseEntity<Object> response = createHourlyElectricity("232323","500", "2018-11-23T10:00:00");
++    assertEquals(200, response.getStatusCode().value());
++    assertEquals(500, ((Map<String,String>)response.getBody()).get("generatedElectricity"));
++    assertEquals("2018-11-23T10:00:00", ((Map<String,String>)response.getBody()).get("readingAt"));
++    createPanel("232324", 202);
++    response = createHourlyElectricity("232324","500", "2018-11-23T10:00:00");
++    assertEquals(200, response.getStatusCode().value());
++    assertEquals(500, ((Map<String,String>)response.getBody()).get("generatedElectricity"));
++    assertEquals("2018-11-23T10:00:00", ((Map<String,String>)response.getBody()).get("readingAt"));
++  }
++
++  @Test
++  public void testHourlyElectricityShouldBeGetted() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createHourlyElectricity("232323", "500", "2018-11-23T10:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/hourly", Object.class);
++
++    List<Map<String, Object> > content = ((Map<String,List<Map<String, Object> > >)response.getBody()).get("content");
++    assertEquals(1, content.size());
++    assertEquals(500, content.get(0).get("generatedElectricity"));
++    assertEquals("2018-11-23T10:00:00", content.get(0).get("readingAt"));
++  }
++
++  @Test
++  public void testTwoHourlyElectricityShouldBeGetted() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createHourlyElectricity("232323", "400", "2018-11-23T11:00:00");
++    createHourlyElectricity("232323", "500", "2018-11-23T10:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/hourly", Object.class);
++
++    List<Map<String, Object> > content = ((Map<String,List<Map<String, Object> > >)response.getBody()).get("content");
++    assertEquals(2, content.size());
++    assertEquals(400, content.get(0).get("generatedElectricity"));
++    assertEquals("2018-11-23T11:00:00", content.get(0).get("readingAt"));
++    assertEquals(500, content.get(1).get("generatedElectricity"));
++    assertEquals("2018-11-23T10:00:00", content.get(1).get("readingAt"));
++  }
++
++  @Test
++  public void testTwoHourlyElectricityShouldBeGettedInRightOrder() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createHourlyElectricity("232323", "500", "2018-11-23T10:00:00");
++    createHourlyElectricity("232323", "400", "2018-11-23T11:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/hourly", Object.class);
++
++    List<Map<String, Object> > content = ((Map<String,List<Map<String, Object> > >)response.getBody()).get("content");
++    assertEquals(2, content.size());
++    assertEquals(400, content.get(0).get("generatedElectricity"));
++    assertEquals("2018-11-23T11:00:00", content.get(0).get("readingAt"));
++    assertEquals(500, content.get(1).get("generatedElectricity"));
++    assertEquals("2018-11-23T10:00:00", content.get(1).get("readingAt"));
++  }
++
++  @Test
++  public void testHourlyElectricityShouldBeGettedForOnlyNeedPanel() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createHourlyElectricity("232323", "500", "2018-11-23T10:00:00");
++    createPanel("232324", 202);
++    createHourlyElectricity("232324", "400", "2018-11-23T11:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/hourly", Object.class);
++
++    List<Map<String, Object> > content = ((Map<String,List<Map<String, Object> > >)response.getBody()).get("content");
++    assertEquals(1, content.size());
++    assertEquals(500, content.get(0).get("generatedElectricity"));
++    assertEquals("2018-11-23T10:00:00", content.get(0).get("readingAt"));
++  }
++
++  @Test
++  public void testHourlyElectricityShouldNotBeGettedForEmptyPanel() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createPanel("232324", 202);
++    createHourlyElectricity("232324", "400", "2018-11-23T11:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/hourly", Object.class);
++
++    List<Map<String, Object> > content = ((Map<String,List<Map<String, Object> > >)response.getBody()).get("content");
++    assertEquals(0, content.size());
++  }
++
++  @Test
++  public void testHourlyElectricityShouldReturnEmptyPageIfNotHavingPanel() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232324/hourly", Object.class);
++    assertEquals(404, response.getStatusCode().value());
++  }
++
++  @Test
++  public void testDailyElectricityShouldBeCounted() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createHourlyElectricity("232323", "500", "2018-11-23T10:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/daily", Object.class);
++
++    List<Map<String, Object> > content = (List<Map<String, Object> >)response.getBody();
++    assertEquals(1, content.size());
++    assertEquals("2018-11-23", content.get(0).get("date"));
++    assertEquals(500, content.get(0).get("sum"));
++    assertEquals(500.0, content.get(0).get("average"));
++    assertEquals(500, content.get(0).get("min"));
++    assertEquals(500, content.get(0).get("max"));
++  }
++
++  @Test
++  public void testTwoHourlyElectricityForOneDailyShouldBeCounted() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createHourlyElectricity("232323", "500", "2018-11-23T10:00:00");
++    createHourlyElectricity("232323", "400", "2018-11-23T11:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/daily", Object.class);
++
++    List<Map<String, Object> > content = (List<Map<String, Object> >)response.getBody();
++    assertEquals(1, content.size());
++    assertEquals("2018-11-23", content.get(0).get("date"));
++    assertEquals(900, content.get(0).get("sum"));
++    assertEquals(450.0, content.get(0).get("average"));
++    assertEquals(400, content.get(0).get("min"));
++    assertEquals(500, content.get(0).get("max"));
++  }
++
++  @Test
++  public void testTwoDailyElectricityShouldBeCounted() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createHourlyElectricity("232323", "500", "2018-11-23T10:00:00");
++    createHourlyElectricity("232323", "400", "2018-11-24T10:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/daily", Object.class);
++
++    List<Map<String, Object> > content = (List<Map<String, Object> >)response.getBody();
++    assertEquals(2, content.size());
++    assertEquals("2018-11-24", content.get(0).get("date"));
++    assertEquals(400, content.get(0).get("sum"));
++    assertEquals(400.0, content.get(0).get("average"));
++    assertEquals(400, content.get(0).get("min"));
++    assertEquals(400, content.get(0).get("max"));
++    assertEquals("2018-11-23", content.get(1).get("date"));
++    assertEquals(500, content.get(1).get("sum"));
++    assertEquals(500.0, content.get(1).get("average"));
++    assertEquals(500, content.get(1).get("min"));
++    assertEquals(500, content.get(1).get("max"));
++  }
++
++  @Test
++  public void testTodayDailyElectricityShouldNotCounted() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createHourlyElectricity("232323", "500", LocalDate.now().toString()+"T10:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/daily", Object.class);
++
++    List<Map<String, Object> > content = (List<Map<String, Object> >)response.getBody();
++    assertEquals(200, response.getStatusCode().value());
++    assertEquals(0, ((List<Object>)response.getBody()).size());
++  }
++
++
++  @Test
++  public void testDailyElectricityShouldBeGettedForOnlyNeedPanel() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createHourlyElectricity("232323", "500", "2018-11-23T10:00:00");
++    createPanel("232324", 202);
++    createHourlyElectricity("232324", "400", "2018-11-23T11:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/daily", Object.class);
++
++    List<Map<String, Object> > content = (List<Map<String, Object> >)response.getBody();
++    assertEquals(1, content.size());
++    assertEquals("2018-11-23", content.get(0).get("date"));
++    assertEquals(500, content.get(0).get("sum"));
++    assertEquals(500.0, content.get(0).get("average"));
++    assertEquals(500, content.get(0).get("min"));
++    assertEquals(500, content.get(0).get("max"));
++  }
++
++  @Test
++  public void testDailyElectricityShouldNotBeGettedForEmptyPanel() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++    createPanel("232324", 202);
++    createHourlyElectricity("232324", "400", "2018-11-23T11:00:00");
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232323/daily", Object.class);
++    assertEquals(200, response.getStatusCode().value());
++    assertEquals(0, ((List<Object>)response.getBody()).size());
++  }
++
++  @Test
++  public void testDailyElectricityShouldReturnEmptyPageIfNotHavingPanel() throws Exception {
++    clearRepositories();
++    createPanel("232323", 202);
++
++    ResponseEntity<Object> response = template.getForEntity("/api/panels/232324/daily", Object.class);
++    assertEquals(404, response.getStatusCode().value());
++  }
++
++  private void clearRepositories() {
++    hourlyElectricityRepository.deleteAll();
++    panelRepository.deleteAll();
++  }
++
++  private void checkWasException(ResponseEntity<Object> response) {
++    assertEquals("Unable to process this request.", ((Map<String,String>)response.getBody()).get("message"));
++  }
++
++  private ResponseEntity<Object> createPanel(String serial, int needStatusCode) {
+     HttpEntity<Object> panel = getHttpEntity(
+-        "{\"serial\": \"232323\", \"longitude\": \"54.123232\"," 
+-            + " \"latitude\": \"54.123232\",\"brand\":\"tesla\" }");
+-    ResponseEntity<Panel> response = template.postForEntity(
+-        "/api/register", panel, Panel.class);
+-    Assert.assertEquals(202,response.getStatusCode().value());
++            "{\"serial\": \"" + serial + "\", \"longitude\": \"54.123232\","
++                    + " \"latitude\": \"54.123232\",\"brand\":\"tesla\" }");
++    ResponseEntity<Object> response = template.postForEntity("/api/register", panel, Object.class);
++    assertEquals(needStatusCode, response.getStatusCode().value());
++    return response;
++  }
++
++  private ResponseEntity<Object> createHourlyElectricity(String panelId, String generatedElectricity, String readingAt) {
++    HttpEntity<Object> hourlyEl = getHttpEntity(
++            ((null != generatedElectricity) ? "{\"generatedElectricity\": \"" + generatedElectricity + "\", " : "") +
++                  ((null != generatedElectricity) ? "\"readingAt\": \"" + readingAt + "\"}" : ""));
++    return template.postForEntity("/api/panels/" + panelId + "/hourly", hourlyEl, Object.class);
+   }
+ 
+   private HttpEntity<Object> getHttpEntity(Object body) {
+diff --git a/src/test/resources/applicationTest.properties b/src/test/resources/applicationTest.properties
+new file mode 100644
+index 0000000..b308133
+--- /dev/null
++++ b/src/test/resources/applicationTest.properties
+@@ -0,0 +1,16 @@
++#PLEASE TRY NOT TO CHANGE SETTINGS AND USE APPROPRIATE ENV VARIABLES and DATABASE NAME AS CONFIGURED BELOW
++#Database connection Parameters
++spring.datasource.url: jdbc:mysql://localhost:3306/crosssolarTest?createDatabaseIfNotExist=true&useSSL=false
++spring.datasource.username=root
++spring.datasource.password=
++spring.datasource.driver-class-name=com.mysql.jdbc.Driver
++
++spring.jpa.hibernate.ddl-auto=none
++
++spring.liquibase.change-log=classpath:/db/changelog/db.changelog-master.xml
++
++spring.data.rest.base-path=/api
++
++logging.level.root=INFO
++logging.level.org.hibernate.SQL=INFO
++logging.level.org.springframework=INFO
+\ No newline at end of file
+-- 
+2.17.0.windows.1
+
